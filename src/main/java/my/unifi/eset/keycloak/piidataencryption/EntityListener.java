@@ -13,6 +13,7 @@ import org.hibernate.event.spi.PreUpdateEvent;
 import org.hibernate.event.spi.PreUpdateEventListener;
 import org.hibernate.integrator.spi.Integrator;
 import org.hibernate.service.spi.SessionFactoryServiceRegistry;
+import org.jboss.logging.Logger;
 import org.keycloak.models.KeycloakSession;
 import org.keycloak.models.jpa.entities.UserAttributeEntity;
 import org.keycloak.representations.userprofile.config.UPAttribute;
@@ -27,6 +28,8 @@ import org.keycloak.utils.KeycloakSessionUtil;
  * @author MLukman (https://github.com/MLukman)
  */
 public class EntityListener implements Integrator, PreLoadEventListener, PreInsertEventListener, PreUpdateEventListener {
+
+    static final Logger logger = Logger.getLogger(EncryptionUtil.class);
 
     @Override
     public void integrate(Metadata metadata, BootstrapContext bootstrapContext, SessionFactoryImplementor sessionFactory) {
@@ -43,12 +46,17 @@ public class EntityListener implements Integrator, PreLoadEventListener, PreInse
 
     @Override
     public void onPreLoad(PreLoadEvent ple) {
-        if (ple.getEntity() instanceof UserAttributeEntity) {
+        if (ple.getEntity() instanceof UserAttributeEntity uae) {
             String[] propertyNames = ple.getPersister().getEntityMetamodel().getPropertyNames();
             Object[] state = ple.getState();
             for (int i = 0; i < propertyNames.length; i++) {
-                if ("value".equalsIgnoreCase(propertyNames[i])) {
+                if ("value".equalsIgnoreCase(propertyNames[i]) && EncryptionUtil.isEncryptedValue((String) state[i])) {
                     state[i] = EncryptionUtil.decryptValue((String) state[i]);
+                    if (EncryptionUtil.isEncryptedValue((String) state[i])) {
+                        logger.warnf("Failed to decrypt user attribute %s", uae.getId());
+                    } else {
+                        logger.debugf("Successfully decrypted user attribute %s", uae.getId());
+                    }
                 }
             }
         }
@@ -75,12 +83,25 @@ public class EntityListener implements Integrator, PreLoadEventListener, PreInse
     }
 
     void doEncryptValue(UserAttributeEntity uae, String[] propertyNames, Object[] state) {
+        if (uae.getValue() == null) {
+            logger.debugf("Skipped encrypting attribute %s for user %s because value is null", uae.getName(), uae.getUser().getId());
+            return;
+        }
+        if (EncryptionUtil.isEncryptedValue(uae.getValue())) {
+            // Skipped because already encrypted
+            return;
+        }
         String encryptedValue = EncryptionUtil.encryptValue(uae.getValue());
-        for (int i = 0; i < propertyNames.length; i++) {
-            if ("value".equalsIgnoreCase(propertyNames[i])) {
-                state[i] = encryptedValue;
+        if (EncryptionUtil.isEncryptedValue(encryptedValue)) {
+            for (int i = 0; i < propertyNames.length; i++) {
+                if ("value".equalsIgnoreCase(propertyNames[i])) {
+                    state[i] = encryptedValue;
+                    logger.debugf("Successfully encrypted attribute %s for user %s", uae.getName(), uae.getUser().getId());
+                    return;
+                }
             }
         }
+        logger.warnf("Failed to encrypt attribute %s for user %s", uae.getName(), uae.getUser().getId());
     }
 
     boolean shouldEncryptAttribute(UserAttributeEntity userAttributeEntity) {
@@ -91,7 +112,7 @@ public class EntityListener implements Integrator, PreLoadEventListener, PreInse
         UserProfileProvider upp = ks.getProvider(UserProfileProvider.class);
         if (upp instanceof DeclarativeUserProfileProvider dup) {
             UPAttribute upa = dup.getConfiguration().getAttribute(userAttributeEntity.getName());
-            if (upa != null && upa.getValidations().containsKey("pii-data-encryption")) {
+            if (upa != null && upa.getValidations().containsKey(PiiDataEncryptionValidatorProvider.ID)) {
                 return true;
             }
         }
