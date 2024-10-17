@@ -1,12 +1,7 @@
 package my.unifi.eset.keycloak.piidataencryption;
 
-import java.security.InvalidAlgorithmParameterException;
-import java.security.InvalidKeyException;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
-import java.security.SecureRandom;
-import java.util.Base64;
-import java.util.HexFormat;
+import org.apache.commons.lang3.ArrayUtils;
+
 import javax.crypto.BadPaddingException;
 import javax.crypto.Cipher;
 import javax.crypto.IllegalBlockSizeException;
@@ -14,7 +9,11 @@ import javax.crypto.NoSuchPaddingException;
 import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
-import org.apache.commons.lang3.ArrayUtils;
+import java.security.InvalidAlgorithmParameterException;
+import java.security.InvalidKeyException;
+import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
+import java.util.Base64;
 
 /**
  * Provide encryption functionalities.
@@ -106,9 +105,7 @@ public class EncryptionUtil {
     static SecretKey getEncryptionKey() throws NoSuchAlgorithmException {
         String key = System.getenv("KC_PII_ENCKEY");
         if (key == null || key.isBlank()) {
-            MessageDigest md = MessageDigest.getInstance("MD5");
-            md.update(System.getenv("KC_DB_URL").getBytes());
-            key = HexFormat.of().formatHex(md.digest()).toLowerCase();
+            throw new RuntimeException("Environment variable KC_PII_ENCKEY is missing!");
         }
         return new SecretKeySpec(key.getBytes(), "AES");
     }

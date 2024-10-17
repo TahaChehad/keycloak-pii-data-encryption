@@ -105,7 +105,7 @@ public class EntityListener implements Integrator, PreLoadEventListener, PreInse
     }
 
     boolean shouldEncryptAttribute(UserAttributeEntity userAttributeEntity) {
-        if (userAttributeEntity.getName().startsWith("pii-")) {
+        if (userAttributeEntity.getName().startsWith("nrn")) {
             return true;
         }
         KeycloakSession ks = KeycloakSessionUtil.getKeycloakSession();
